@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐾 毛孩協尋板</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --orange: #FF6B35;
+    --orange-light: #FF8C5A;
+    --orange-pale: #FFF0E8;
+    --yellow: #FFB830;
+    --yellow-light: #FFF3CC;
+    --brown: #6B3A2A;
+    --gray: #6B7280;
+    --gray-light: #F3F4F6;
+    --white: #FFFFFF;
+    --shadow: 0 4px 20px rgba(255,107,53,0.12);
+    --shadow-hover: 0 8px 30px rgba(255,107,53,0.22);
+    --radius: 16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, '微軟正黑體', sans-serif;
+    background: #FFF8F4;
+    color: #2D1810;
+    min-height: 100vh;
+  }
+
+  header {
+    background: linear-gradient(135deg, var(--orange) 0%, var(--yellow) 100%);
+    padding: 20px 24px 28px;
+    text-align: center;
+    position: relative;
+  }
+  header h1 { font-size: 28px; font-weight: 800; color: white; text-shadow: 0 2px 8px rgba(0,0,0,0.15); letter-spacing: 2px; }
+  header p { color: rgba(255,255,255,0.88); font-size: 14px; margin-top: 6px; }
+  .header-wave { position: absolute; bottom: -1px; left: 0; right: 0; height: 24px; background: #FFF8F4; border-radius: 50% 50% 0 0 / 24px 24px 0 0; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  .search-bar { position: relative; margin-bottom: 16px; }
+  .search-bar input { width: 100%; padding: 14px 20px 14px 48px; border: 2px solid #E5E7EB; border-radius: 999px; font-size: 15px; font-family: inherit; color: #1F1F1F; background: white; outline: none; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .search-bar input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px rgba(255,107,53,0.1); }
+  .search-bar input::placeholder { color: #9CA3AF; }
+  .search-icon { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); font-size: 18px; pointer-events: none; }
+  .search-clear { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border-radius: 50%; background: #E5E7EB; border: none; cursor: pointer; font-size: 13px; display: none; align-items: center; justify-content: center; color: var(--gray); }
+  .search-clear.visible { display: flex; }
+
+  .stats-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .stats-info { font-size: 14px; color: var(--gray); }
+  .stats-info strong { color: var(--orange); font-size: 18px; }
+
+  .filter-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .tab-btn { padding: 8px 18px; border-radius: 999px; border: 2px solid #E5E7EB; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; background: var(--white); color: var(--gray); }
+  .tab-btn.active { background: var(--orange); color: white; border-color: var(--orange); }
+  .tab-btn:hover:not(.active) { border-color: var(--orange); color: var(--orange); }
+
+  .btn-add { background: linear-gradient(135deg, var(--orange), var(--orange-light)); color: white; border: none; padding: 12px 24px; border-radius: 999px; font-size: 15px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(255,107,53,0.4); transition: all 0.2s; }
+  .btn-add:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,53,0.5); }
+
+  .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+  .pet-card { background: white; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); transition: all 0.25s; cursor: pointer; position: relative; }
+  .pet-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
+  .pet-card.found { opacity: 0.65; }
+  .card-badge { position: absolute; top: 12px; left: 12px; z-index: 2; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; color: white; }
+  .badge-lost { background: var(--orange); }
+  .badge-found { background: #22C55E; }
+  .card-img { width: 100%; height: 200px; background: var(--orange-pale); display: flex; align-items: center; justify-content: center; font-size: 64px; overflow: hidden; }
+  .card-img img { width: 100%; height: 100%; object-fit: cover; }
+  .card-body { padding: 16px; }
+  .card-name { font-size: 18px; font-weight: 800; color: #1F1F1F; margin-bottom: 4px; }
+  .card-species { font-size: 13px; color: var(--orange); font-weight: 600; margin-bottom: 10px; }
+  .card-info { font-size: 13px; color: var(--gray); line-height: 1.8; }
+  .card-info span { display: flex; align-items: flex-start; gap: 6px; }
+  .card-info .icon { flex-shrink: 0; }
+  .card-footer { padding: 12px 16px; border-top: 1px solid #F3F4F6; display: flex; justify-content: space-between; align-items: center; }
+  .card-date { font-size: 12px; color: #9CA3AF; }
+  .card-actions { display: flex; gap: 8px; }
+  .btn-sm { padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-contact { background: var(--orange-pale); color: var(--orange); }
+  .btn-contact:hover { background: var(--orange); color: white; }
+  .btn-edit { background: var(--gray-light); color: var(--gray); }
+  .btn-edit:hover { background: #E5E7EB; }
+
+  .empty-state { text-align: center; padding: 80px 20px; color: var(--gray); }
+  .empty-state .emoji { font-size: 72px; margin-bottom: 16px; }
+  .empty-state h3 { font-size: 20px; margin-bottom: 8px; color: #374151; }
+  .empty-state p { font-size: 14px; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: white; border-radius: 20px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: slideUp 0.25s ease; }
+  @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-header { padding: 20px 24px 16px; border-bottom: 1px solid #F3F4F6; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; }
+  .modal-title { font-size: 18px; font-weight: 800; color: var(--brown); }
+  .btn-close { width: 32px; height: 32px; border-radius: 50%; background: var(--gray-light); border: none; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+  .btn-close:hover { background: #E5E7EB; }
+  .modal-body { padding: 20px 24px; }
+
+  .form-section { background: var(--orange-pale); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+  .form-section-title { font-size: 13px; font-weight: 700; color: var(--orange); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group:last-child { margin-bottom: 0; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+  label .required { color: var(--orange); margin-left: 2px; }
+  input[type="text"], input[type="tel"], input[type="date"], select, textarea { width: 100%; padding: 10px 14px; border: 2px solid #E5E7EB; border-radius: 10px; font-size: 14px; font-family: inherit; color: #1F1F1F; background: white; transition: border-color 0.2s; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--orange); }
+  textarea { min-height: 80px; resize: vertical; }
+
+  .location-input-row { display: flex; gap: 8px; align-items: stretch; }
+  .location-input-row input { flex: 1; }
+  .btn-geocode { flex-shrink: 0; padding: 10px 14px; border-radius: 10px; background: var(--orange); color: white; border: none; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+  .btn-geocode:hover { background: var(--orange-light); }
+  .btn-geocode:disabled { background: #D1D5DB; cursor: not-allowed; }
+  .map-hint { font-size: 12px; color: var(--gray); margin: 6px 0 8px; }
+  .map-container { height: 240px; border-radius: 10px; overflow: hidden; border: 2px solid #E5E7EB; background: var(--gray-light); }
+  .map-container-detail { height: 200px; border-radius: 10px; overflow: hidden; border: 2px solid #E5E7EB; margin-bottom: 16px; }
+
+  .photo-upload-area { border: 2px dashed #E5E7EB; border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: white; }
+  .photo-upload-area:hover { border-color: var(--orange); background: var(--orange-pale); }
+  .photo-upload-area .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .photo-upload-area p { font-size: 13px; color: var(--gray); }
+  .photo-upload-area strong { color: var(--orange); }
+  #photoInput { display: none; }
+  .photo-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .preview-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; }
+  .preview-item img { width: 100%; height: 100%; object-fit: cover; }
+  .preview-remove { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+  .modal-footer { padding: 16px 24px 24px; display: flex; gap: 12px; justify-content: flex-end; }
+  .btn-cancel { padding: 12px 24px; border-radius: 10px; border: 2px solid #E5E7EB; background: white; font-size: 14px; font-weight: 600; color: var(--gray); cursor: pointer; }
+  .btn-cancel:hover { border-color: #D1D5DB; background: var(--gray-light); }
+  .btn-submit { padding: 12px 28px; border-radius: 10px; border: none; background: linear-gradient(135deg, var(--orange), var(--orange-light)); color: white; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(255,107,53,0.35); transition: all 0.2s; }
+  .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(255,107,53,0.45); }
+
+  .detail-photo { width: 100%; height: 240px; border-radius: 12px; margin-bottom: 16px; background: var(--orange-pale); display: flex; align-items: center; justify-content: center; font-size: 72px; overflow: hidden; }
+  .detail-photo img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+  .detail-name { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+  .detail-species-badge { display: inline-block; padding: 4px 14px; background: var(--orange-pale); color: var(--orange); border-radius: 999px; font-size: 13px; font-weight: 700; margin-bottom: 16px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .detail-item { background: var(--gray-light); padding: 10px 14px; border-radius: 10px; }
+  .detail-item .dt { font-size: 11px; color: var(--gray); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-item .dd { font-size: 14px; font-weight: 700; color: #1F1F1F; margin-top: 2px; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 { font-size: 13px; font-weight: 700; color: var(--orange); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .detail-section p { font-size: 14px; color: #374151; line-height: 1.7; }
+  .contact-box { background: linear-gradient(135deg, var(--orange-pale), var(--yellow-light)); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .contact-box h4 { font-size: 13px; font-weight: 700; color: var(--orange); margin-bottom: 10px; text-transform: uppercase; }
+  .contact-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 14px; }
+  .contact-row:last-child { margin-bottom: 0; }
+  .btn-found { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid #22C55E; background: white; color: #16A34A; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s; margin-bottom: 8px; }
+  .btn-found:hover { background: #DCFCE7; }
+  .btn-delete { width: 100%; padding: 10px; border-radius: 10px; border: none; background: #FEF2F2; color: #EF4444; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-delete:hover { background: #FEE2E2; }
+
+  .toast { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(80px); background: #1F1F1F; color: white; padding: 12px 24px; border-radius: 999px; font-size: 14px; font-weight: 600; z-index: 999; transition: transform 0.3s ease; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .leaflet-container { font-family: inherit; }
+  .custom-pin { width: 28px; height: 28px; background: var(--orange); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+
+  @media (max-width: 480px) {
+    .form-row { grid-template-columns: 1fr; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .stats-bar { flex-direction: column; align-items: flex-start; }
+    header h1 { font-size: 22px; }
+    .location-input-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🐾 毛孩協尋板</h1>
+  <p>讓走失的毛孩早日回家 💛</p>
+  <div class="header-wave"></div>
+</header>
+
+<div class="container">
+  <div class="search-bar">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="searchInput" placeholder="搜尋寵物名字、品種、走失地點…" oninput="onSearch(this.value)">
+    <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stats-info">目前有 <strong id="statsCount">0</strong> 筆協尋中 🔍</div>
+    <button class="btn-add" onclick="openAddModal()">＋ 刊登協尋啟事</button>
+  </div>
+
+  <div class="filter-tabs">
+    <button class="tab-btn active" onclick="filterCards('all', this)">全部</button>
+    <button class="tab-btn" onclick="filterCards('lost', this)">協尋中</button>
+    <button class="tab-btn" onclick="filterCards('found', this)">已找到 🎉</button>
+    <button class="tab-btn" onclick="filterCards('dog', this)">🐕 狗</button>
+    <button class="tab-btn" onclick="filterCards('cat', this)">🐈 貓</button>
+  </div>
+
+  <div class="cards-grid" id="cardsGrid"></div>
+  <div class="empty-state" id="emptyState" style="display:none">
+    <div class="emoji">🐾</div>
+    <h3 id="emptyTitle">目前沒有協尋啟事</h3>
+    <p id="emptyDesc">按下「刊登協尋啟事」來新增第一筆吧！</p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="formModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="formModalTitle">🐾 刊登協尋啟事</div>
+      <button class="btn-close" onclick="closeFormModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <div class="form-section-title">📸 寵物照片</div>
+        <div class="photo-upload-area" onclick="document.getElementById('photoInput').click()">
+          <div class="upload-icon">📷</div>
+          <p><strong>點擊上傳照片</strong><br>支援 JPG、PNG（最多 3 張）</p>
+        </div>
+        <input type="file" id="photoInput" accept="image/*" multiple onchange="handlePhotoUpload(event)">
+        <div class="photo-preview-grid" id="photoPreviewGrid"></div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">🐾 寵物資訊</div>
+        <div class="form-group">
+          <label>寵物名字 <span class="required">*</span></label>
+          <input type="text" id="f_petName" placeholder="例：小白、球球">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>種類 <span class="required">*</span></label>
+            <select id="f_species">
+              <option value="">請選擇</option>
+              <option value="dog">🐕 狗</option>
+              <option value="cat">🐈 貓</option>
+              <option value="bird">🐦 鳥</option>
+              <option value="rabbit">🐰 兔</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>性別</label>
+            <select id="f_gender">
+              <option value="">不確定</option>
+              <option value="公">公</option>
+              <option value="母">母</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>品種</label>
+            <input type="text" id="f_breed" placeholder="例：柴犬、米克斯">
+          </div>
+          <div class="form-group">
+            <label>毛色</label>
+            <input type="text" id="f_color" placeholder="例：黃白相間">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>外觀特徵描述</label>
+          <textarea id="f_characteristics" placeholder="身上有無特殊標記、項圈顏色、晶片、有無結紮等…"></textarea>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">📍 走失資訊</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>走失日期 <span class="required">*</span></label>
+            <input type="date" id="f_lostDate">
+          </div>
+          <div class="form-group">
+            <label>走失時間（大約）</label>
+            <input type="text" id="f_lostTime" placeholder="例：下午 3 點">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>走失地點 <span class="required">*</span></label>
+          <div class="location-input-row">
+            <input type="text" id="f_lostLocation" placeholder="例：台北市信義區吳興街附近"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();geocodeFormAddress();}">
+            <button type="button" class="btn-geocode" id="geocodeBtn" onclick="geocodeFormAddress()">📍 標記</button>
+          </div>
+          <div class="map-hint">輸入地址後點「📍 標記」，或直接在地圖上點擊設定位置</div>
+          <div class="map-container" id="formMap"></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">📞 飼主聯絡方式</div>
+        <div class="form-group">
+          <label>姓名 <span class="required">*</span></label>
+          <input type="text" id="f_ownerName" placeholder="稱呼即可，例：小白的媽媽">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>電話</label>
+            <input type="tel" id="f_phone" placeholder="0912-345-678">
+          </div>
+          <div class="form-group">
+            <label>LINE ID</label>
+            <input type="text" id="f_lineId" placeholder="line123">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>尋獲酬謝</label>
+          <input type="text" id="f_reward" placeholder="例：$3000 感謝費，或留空">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeFormModal()">取消</button>
+      <button class="btn-submit" onclick="submitForm()">刊登協尋 🐾</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">協尋詳情</div>
+      <button class="btn-close" onclick="closeDetailModal()">✕</button>
+    </div>
+    <div class="modal-body" id="detailContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'petFinder_v1';
+let pets = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let currentFilter = 'all';
+let searchQuery = '';
+let editingId = null;
+let uploadedPhotos = [];
+let formMapInstance = null;
+let formMarker = null;
+let formMapLat = null;
+let formMapLng = null;
+let detailMapInstance = null;
+const TW_CENTER = [25.033, 121.565];
+const DEFAULT_ZOOM = 13;
+
+function makeIcon() {
+  return L.divIcon({ className: '', html: '<div class="custom-pin"></div>', iconSize: [28,28], iconAnchor: [14,28], popupAnchor: [0,-30] });
+}
+
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=tw,hk,mo`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'zh-TW,zh;q=0.9' } });
+    const data = await res.json();
+    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+    return null;
+  } catch { return null; }
+}
+
+async function geocodeFormAddress() {
+  const addr = document.getElementById('f_lostLocation').value.trim();
+  if (!addr) { showToast('請先輸入走失地點'); return; }
+  const btn = document.getElementById('geocodeBtn');
+  btn.disabled = true; btn.textContent = '定位中…';
+  const result = await geocodeAddress(addr);
+  btn.disabled = false; btn.textContent = '📍 標記';
+  if (!result) { showToast('找不到此地址，請換個說法試試'); return; }
+  setFormPin(result.lat, result.lng);
+  showToast('📍 已在地圖上標記位置');
+}
+
+function initFormMap(lat, lng) {
+  if (formMapInstance) { formMapInstance.remove(); formMapInstance = null; formMarker = null; }
+  const center = (lat && lng) ? [lat, lng] : TW_CENTER;
+  const zoom = (lat && lng) ? 15 : DEFAULT_ZOOM;
+  formMapInstance = L.map('formMap').setView(center, zoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(formMapInstance);
+  if (lat && lng) {
+    formMarker = L.marker([lat,lng], { icon: makeIcon(), draggable: true }).addTo(formMapInstance);
+    formMapLat = lat; formMapLng = lng;
+    formMarker.on('dragend', e => { const p = e.target.getLatLng(); formMapLat = p.lat; formMapLng = p.lng; });
+  }
+  formMapInstance.on('click', e => { setFormPin(e.latlng.lat, e.latlng.lng); });
+}
+
+function setFormPin(lat, lng) {
+  if (!formMapInstance) return;
+  formMapLat = lat; formMapLng = lng;
+  if (formMarker) { formMarker.setLatLng([lat,lng]); }
+  else {
+    formMarker = L.marker([lat,lng], { icon: makeIcon(), draggable: true }).addTo(formMapInstance);
+    formMarker.on('dragend', e => { const p = e.target.getLatLng(); formMapLat = p.lat; formMapLng = p.lng; });
+  }
+  formMapInstance.setView([lat,lng], 15);
+}
+
+function destroyFormMap() {
+  if (formMapInstance) { formMapInstance.remove(); formMapInstance = null; formMarker = null; }
+  formMapLat = null; formMapLng = null;
+}
+
+function initDetailMap(containerId, lat, lng, label) {
+  if (detailMapInstance) { detailMapInstance.remove(); detailMapInstance = null; }
+  detailMapInstance = L.map(containerId).setView([lat,lng], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(detailMapInstance);
+  L.marker([lat,lng], { icon: makeIcon() }).addTo(detailMapInstance).bindPopup(`<b>走失地點</b><br>${label}`).openPopup();
+}
+
+function destroyDetailMap() {
+  if (detailMapInstance) { detailMapInstance.remove(); detailMapInstance = null; }
+}
+
+function render() {
+  const grid = document.getElementById('cardsGrid');
+  const empty = document.getElementById('emptyState');
+  document.getElementById('statsCount').textContent = pets.filter(p => p.status === 'lost').length;
+  let filtered = pets;
+  if (currentFilter === 'lost') filtered = pets.filter(p => p.status === 'lost');
+  else if (currentFilter === 'found') filtered = pets.filter(p => p.status === 'found');
+  else if (currentFilter === 'dog') filtered = pets.filter(p => p.species === 'dog');
+  else if (currentFilter === 'cat') filtered = pets.filter(p => p.species === 'cat');
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(p =>
+      (p.petName||'').toLowerCase().includes(q) || (p.breed||'').toLowerCase().includes(q) ||
+      (p.color||'').toLowerCase().includes(q) || (p.lostLocation||'').toLowerCase().includes(q) ||
+      (p.characteristics||'').toLowerCase().includes(q) || (p.ownerName||'').toLowerCase().includes(q)
+    );
+  }
+  filtered = [...filtered].sort((a,b) => { if (a.status !== b.status) return a.status === 'lost' ? -1 : 1; return b.createdAt - a.createdAt; });
+  if (filtered.length === 0) {
+    grid.innerHTML = ''; empty.style.display = 'block';
+    if (searchQuery) { document.getElementById('emptyTitle').textContent = `找不到「${searchQuery}」相關的協尋`; document.getElementById('emptyDesc').textContent = '試試其他關鍵字，或清除搜尋條件'; }
+    else { document.getElementById('emptyTitle').textContent = '目前沒有協尋啟事'; document.getElementById('emptyDesc').textContent = '按下「刊登協尋啟事」來新增第一筆吧！'; }
+    return;
+  }
+  empty.style.display = 'none';
+  const se = { dog:'🐕', cat:'🐈', bird:'🐦', rabbit:'🐰', other:'🐾' };
+  grid.innerHTML = filtered.map(pet => `
+    <div class="pet-card ${pet.status==='found'?'found':''}" onclick="openDetail('${pet.id}')">
+      <span class="card-badge ${pet.status==='found'?'badge-found':'badge-lost'}">${pet.status==='found'?'✅ 已找到':'🔍 協尋中'}</span>
+      <div class="card-img">${pet.photos&&pet.photos[0]?`<img src="${pet.photos[0]}" alt="${pet.petName}">`:`<span>${se[pet.species]||'🐾'}</span>`}</div>
+      <div class="card-body">
+        <div class="card-name">${pet.petName}</div>
+        <div class="card-species">${se[pet.species]||'🐾'} ${speciesLabel(pet.species)}${pet.breed?' · '+pet.breed:''}${pet.gender?' · '+pet.gender:''}</div>
+        <div class="card-info">
+          <span><span class="icon">📍</span>${pet.lostLocation}</span>
+          <span><span class="icon">📅</span>走失：${formatDate(pet.lostDate)}</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="card-date">${timeAgo(pet.createdAt)}</span>
+        <div class="card-actions">
+          <button class="btn-sm btn-contact" onclick="event.stopPropagation();openDetail('${pet.id}')">聯絡飼主</button>
+          <button class="btn-sm btn-edit" onclick="event.stopPropagation();openEditModal('${pet.id}')">編輯</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function onSearch(val) { searchQuery = val.trim(); document.getElementById('searchClear').classList.toggle('visible', searchQuery.length > 0); render(); }
+function clearSearch() { document.getElementById('searchInput').value = ''; onSearch(''); }
+function filterCards(type, btn) { currentFilter = type; document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); render(); }
+
+function openAddModal() {
+  editingId = null; uploadedPhotos = []; clearForm();
+  document.getElementById('formModalTitle').textContent = '🐾 刊登協尋啟事';
+  document.querySelector('.btn-submit').textContent = '刊登協尋 🐾';
+  document.getElementById('formModal').classList.add('open');
+  document.getElementById('f_lostDate').value = new Date().toISOString().split('T')[0];
+  setTimeout(() => { initFormMap(null,null); formMapInstance.invalidateSize(); }, 120);
+}
+
+function closeFormModal() { document.getElementById('formModal').classList.remove('open'); destroyFormMap(); uploadedPhotos = []; clearForm(); }
+
+function clearForm() {
+  ['f_petName','f_species','f_gender','f_breed','f_color','f_characteristics','f_lostDate','f_lostTime','f_lostLocation','f_ownerName','f_phone','f_lineId','f_reward']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('photoPreviewGrid').innerHTML = '';
+}
+
+function openEditModal(id) {
+  const pet = pets.find(p => p.id === id); if (!pet) return;
+  editingId = id; uploadedPhotos = pet.photos ? [...pet.photos] : [];
+  document.getElementById('formModalTitle').textContent = '✏️ 編輯協尋啟事';
+  document.querySelector('.btn-submit').textContent = '儲存變更';
+  document.getElementById('f_petName').value = pet.petName||'';
+  document.getElementById('f_species').value = pet.species||'';
+  document.getElementById('f_gender').value = pet.gender||'';
+  document.getElementById('f_breed').value = pet.breed||'';
+  document.getElementById('f_color').value = pet.color||'';
+  document.getElementById('f_characteristics').value = pet.characteristics||'';
+  document.getElementById('f_lostDate').value = pet.lostDate||'';
+  document.getElementById('f_lostTime').value = pet.lostTime||'';
+  document.getElementById('f_lostLocation').value = pet.lostLocation||'';
+  document.getElementById('f_ownerName').value = pet.ownerName||'';
+  document.getElementById('f_phone').value = pet.phone||'';
+  document.getElementById('f_lineId').value = pet.lineId||'';
+  document.getElementById('f_reward').value = pet.reward||'';
+  renderPhotoPreviews();
+  document.getElementById('formModal').classList.add('open');
+  setTimeout(() => { initFormMap(pet.lat||null, pet.lng||null); formMapInstance.invalidateSize(); }, 120);
+}
+
+function handlePhotoUpload(event) {
+  const files = Array.from(event.target.files);
+  const remaining = 3 - uploadedPhotos.length;
+  if (remaining <= 0) { showToast('最多上傳 3 張照片'); return; }
+  files.slice(0,remaining).forEach(file => { const r = new FileReader(); r.onload = e => { uploadedPhotos.push(e.target.result); renderPhotoPreviews(); }; r.readAsDataURL(file); });
+  event.target.value = '';
+}
+
+function renderPhotoPreviews() {
+  document.getElementById('photoPreviewGrid').innerHTML = uploadedPhotos.map((src,i) =>
+    `<div class="preview-item"><img src="${src}" alt="照片 ${i+1}"><button class="preview-remove" onclick="removePhoto(${i})">✕</button></div>`).join('');
+}
+
+function removePhoto(index) { uploadedPhotos.splice(index,1); renderPhotoPreviews(); }
+
+function submitForm() {
+  const petName = document.getElementById('f_petName').value.trim();
+  const species = document.getElementById('f_species').value;
+  const lostDate = document.getElementById('f_lostDate').value;
+  const lostLocation = document.getElementById('f_lostLocation').value.trim();
+  const ownerName = document.getElementById('f_ownerName').value.trim();
+  if (!petName) { showToast('請填寫寵物名字 🐾'); document.getElementById('f_petName').focus(); return; }
+  if (!species) { showToast('請選擇寵物種類'); return; }
+  if (!lostDate) { showToast('請填寫走失日期 📅'); return; }
+  if (!lostLocation) { showToast('請填寫走失地點 📍'); document.getElementById('f_lostLocation').focus(); return; }
+  if (!ownerName) { showToast('請填寫聯絡人稱呼 📞'); document.getElementById('f_ownerName').focus(); return; }
+  const data = { petName, species, gender: document.getElementById('f_gender').value, breed: document.getElementById('f_breed').value.trim(), color: document.getElementById('f_color').value.trim(), characteristics: document.getElementById('f_characteristics').value.trim(), lostDate, lostTime: document.getElementById('f_lostTime').value.trim(), lostLocation, ownerName, phone: document.getElementById('f_phone').value.trim(), lineId: document.getElementById('f_lineId').value.trim(), reward: document.getElementById('f_reward').value.trim(), photos: [...uploadedPhotos], lat: formMapLat, lng: formMapLng };
+  if (editingId) { const idx = pets.findIndex(p => p.id === editingId); if (idx !== -1) pets[idx] = { ...pets[idx], ...data }; showToast('✅ 已更新協尋啟事'); }
+  else { data.id = Date.now().toString(); data.createdAt = Date.now(); data.status = 'lost'; pets.unshift(data); showToast('🐾 協尋啟事已刊登！'); }
+  save(); closeFormModal(); render();
+}
+
+function openDetail(id) {
+  const pet = pets.find(p => p.id === id); if (!pet) return;
+  const se = { dog:'🐕', cat:'🐈', bird:'🐦', rabbit:'🐰', other:'🐾' };
+  const el = document.getElementById('detailContent');
+  el.innerHTML = `
+    <div class="detail-photo">${pet.photos&&pet.photos[0]?`<img src="${pet.photos[0]}" alt="${pet.petName}">`:`${se[pet.species]||'🐾'}`}</div>
+    <div style="margin-bottom:12px">
+      <span class="card-badge ${pet.status==='found'?'badge-found':'badge-lost'}" style="position:static;display:inline-block;margin-bottom:8px">${pet.status==='found'?'✅ 已找到':'🔍 協尋中'}</span>
+      <div class="detail-name">${pet.petName}</div>
+      <span class="detail-species-badge">${se[pet.species]||'🐾'} ${speciesLabel(pet.species)}${pet.gender?' · '+pet.gender:''}</span>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-item"><div class="dt">品種</div><div class="dd">${pet.breed||'不明'}</div></div>
+      <div class="detail-item"><div class="dt">毛色</div><div class="dd">${pet.color||'不明'}</div></div>
+      <div class="detail-item"><div class="dt">走失日期</div><div class="dd">${formatDate(pet.lostDate)}</div></div>
+      <div class="detail-item"><div class="dt">走失時間</div><div class="dd">${pet.lostTime||'不確定'}</div></div>
+    </div>
+    <div class="detail-section"><h4>📍 走失地點</h4><p>${pet.lostLocation}</p></div>
+    ${pet.lat&&pet.lng?`<div class="map-container-detail" id="detailMap"></div>`:''}
+    ${pet.characteristics?`<div class="detail-section"><h4>🔎 外觀特徵</h4><p>${pet.characteristics}</p></div>`:''}
+    <div class="contact-box">
+      <h4>📞 聯絡飼主</h4>
+      ${pet.ownerName?`<div class="contact-row">👤 ${pet.ownerName}</div>`:''}
+      ${pet.phone?`<div class="contact-row">📱 <a href="tel:${pet.phone}" style="color:var(--orange);font-weight:700">${pet.phone}</a></div>`:''}
+      ${pet.lineId?`<div class="contact-row">💬 LINE：${pet.lineId}</div>`:''}
+      ${pet.reward?`<div class="contact-row" style="margin-top:8px;color:#D97706;font-weight:700">🎁 ${pet.reward}</div>`:''}
+    </div>
+    ${pet.status==='lost'?`<button class="btn-found" onclick="markFound('${pet.id}')">🎉 毛孩已找到！標記為已尋獲</button>`:''}
+    <button class="btn-delete" onclick="deletePet('${pet.id}')">🗑️ 刪除此協尋啟事</button>`;
+  document.getElementById('detailModal').classList.add('open');
+  if (pet.lat && pet.lng) { setTimeout(() => { initDetailMap('detailMap', pet.lat, pet.lng, pet.lostLocation); detailMapInstance.invalidateSize(); }, 120); }
+}
+
+function closeDetailModal() { document.getElementById('detailModal').classList.remove('open'); destroyDetailMap(); }
+function markFound(id) { const pet = pets.find(p => p.id === id); if (pet) { pet.status = 'found'; save(); render(); closeDetailModal(); showToast('🎉 太好了！毛孩已找到！'); } }
+function deletePet(id) { if (!confirm('確定要刪除這則協尋啟事嗎？')) return; pets = pets.filter(p => p.id !== id); save(); render(); closeDetailModal(); showToast('已刪除'); }
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(pets)); }
+function speciesLabel(s) { return ({dog:'狗',cat:'貓',bird:'鳥',rabbit:'兔',other:'其他'})[s]||s||'不明'; }
+function formatDate(d) { if (!d) return '不明'; const [y,m,day] = d.split('-'); return `${y}/${m}/${day}`; }
+function timeAgo(ts) { const diff = Date.now()-ts; const mins = Math.floor(diff/60000); const hours = Math.floor(diff/3600000); const days = Math.floor(diff/86400000); if (mins<1) return '剛剛'; if (mins<60) return `${mins} 分鐘前`; if (hours<24) return `${hours} 小時前`; if (days<30) return `${days} 天前`; return `${Math.floor(days/30)} 個月前`; }
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2800); }
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) {
+      overlay.classList.remove('open');
+      if (overlay.id === 'formModal') { destroyFormMap(); uploadedPhotos = []; }
+      if (overlay.id === 'detailModal') destroyDetailMap();
+    }
+  });
+});
+
+render();
+</script>
+</body>
+</html>
