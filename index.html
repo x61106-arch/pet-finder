@@ -129,6 +129,11 @@
   .btn-edit { background: var(--gray-light); color: var(--gray); }
   .btn-edit:hover { background: #E5E7EB; }
 
+  /* ===== LOADING STATE ===== */
+  .loading-state { text-align: center; padding: 80px 20px; color: var(--gray); }
+  .loading-spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: var(--orange); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* ===== EMPTY STATE ===== */
   .empty-state { text-align: center; padding: 80px 20px; color: var(--gray); }
   .empty-state .emoji { font-size: 72px; margin-bottom: 16px; }
@@ -220,6 +225,7 @@
   .btn-cancel:hover { border-color: #D1D5DB; background: var(--gray-light); }
   .btn-submit { padding: 12px 28px; border-radius: 10px; border: none; background: linear-gradient(135deg, var(--orange), var(--orange-light)); color: white; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(255,107,53,0.35); transition: all 0.2s; }
   .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(255,107,53,0.45); }
+  .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
   /* ===== DETAIL MODAL ===== */
   .detail-photo { width: 100%; height: 240px; border-radius: 12px; margin-bottom: 16px; background: var(--orange-pale); display: flex; align-items: center; justify-content: center; font-size: 72px; overflow: hidden; }
@@ -298,6 +304,12 @@
   </div>
 
   <div class="cards-grid" id="cardsGrid"></div>
+
+  <div class="loading-state" id="loadingState">
+    <div class="loading-spinner"></div>
+    <p>載入協尋資料中…</p>
+  </div>
+
   <div class="empty-state" id="emptyState" style="display:none">
     <div class="emoji">🐾</div>
     <h3 id="emptyTitle">目前沒有協尋啟事</h3>
@@ -439,9 +451,28 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
 <script>
-const STORAGE_KEY = 'petFinder_v1';
-let pets = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+// ==================== FIREBASE INIT ====================
+const firebaseConfig = {
+  apiKey: "AIzaSyCMhH2p3jMjmtrVmqn57kagkcDntoaX5mU",
+  authDomain: "find-pet-fdcba.firebaseapp.com",
+  projectId: "find-pet-fdcba",
+  storageBucket: "find-pet-fdcba.firebasestorage.app",
+  messagingSenderId: "719163827201",
+  appId: "1:719163827201:web:7e80bdf4dea925009acc00",
+  measurementId: "G-XRB071VGTR"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+// ==================== STATE ====================
+let pets = [];
 let currentFilter = 'all';
 let searchQuery = '';
 let editingId = null;
@@ -456,6 +487,35 @@ let detailMapInstance = null;
 
 const TW_CENTER = [25.033, 121.565];
 const DEFAULT_ZOOM = 13;
+
+// ==================== FIRESTORE LISTENER ====================
+db.collection('pets').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+  pets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  document.getElementById('loadingState').style.display = 'none';
+  render();
+}, err => {
+  console.error('Firestore error:', err);
+  document.getElementById('loadingState').innerHTML = '<p style="color:#EF4444">載入失敗，請重新整理頁面</p>';
+});
+
+// ==================== PHOTO HELPERS ====================
+function dataUrlToBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new Blob([u8arr], { type: mime });
+}
+
+async function uploadPhotoToStorage(base64, petId, index) {
+  const blob = dataUrlToBlob(base64);
+  const ext = blob.type.split('/')[1] || 'jpg';
+  const ref = storage.ref(`pets/${petId}/${index}_${Date.now()}.${ext}`);
+  const snap = await ref.put(blob);
+  return await snap.ref.getDownloadURL();
+}
 
 // ==================== CUSTOM PIN ICON ====================
 function makeIcon() {
@@ -474,7 +534,7 @@ async function geocodeAddress(address) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=tw,hk,mo`;
     const res = await fetch(url, { headers: { 'Accept-Language': 'zh-TW,zh;q=0.9' } });
     const data = await res.json();
-    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     return null;
   } catch { return null; }
 }
@@ -495,58 +555,36 @@ async function geocodeFormAddress() {
 
 // ==================== FORM MAP ====================
 function initFormMap(lat, lng) {
-  if (formMapInstance) {
-    formMapInstance.remove();
-    formMapInstance = null;
-    formMarker = null;
-  }
-
+  if (formMapInstance) { formMapInstance.remove(); formMapInstance = null; formMarker = null; }
   const center = (lat && lng) ? [lat, lng] : TW_CENTER;
   const zoom = (lat && lng) ? 15 : DEFAULT_ZOOM;
   formMapInstance = L.map('formMap').setView(center, zoom);
-
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap',
-    maxZoom: 19
+    attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(formMapInstance);
-
   if (lat && lng) {
     formMarker = L.marker([lat, lng], { icon: makeIcon(), draggable: true }).addTo(formMapInstance);
-    formMapLat = lat;
-    formMapLng = lng;
-    formMarker.on('dragend', e => {
-      const pos = e.target.getLatLng();
-      formMapLat = pos.lat;
-      formMapLng = pos.lng;
-    });
+    formMapLat = lat; formMapLng = lng;
+    formMarker.on('dragend', e => { const p = e.target.getLatLng(); formMapLat = p.lat; formMapLng = p.lng; });
   }
-
-  formMapInstance.on('click', e => {
-    setFormPin(e.latlng.lat, e.latlng.lng);
-  });
+  formMapInstance.on('click', e => { setFormPin(e.latlng.lat, e.latlng.lng); });
 }
 
 function setFormPin(lat, lng) {
   if (!formMapInstance) return;
-  formMapLat = lat;
-  formMapLng = lng;
+  formMapLat = lat; formMapLng = lng;
   if (formMarker) {
     formMarker.setLatLng([lat, lng]);
   } else {
     formMarker = L.marker([lat, lng], { icon: makeIcon(), draggable: true }).addTo(formMapInstance);
-    formMarker.on('dragend', e => {
-      const pos = e.target.getLatLng();
-      formMapLat = pos.lat;
-      formMapLng = pos.lng;
-    });
+    formMarker.on('dragend', e => { const p = e.target.getLatLng(); formMapLat = p.lat; formMapLng = p.lng; });
   }
   formMapInstance.setView([lat, lng], 15);
 }
 
 function destroyFormMap() {
   if (formMapInstance) { formMapInstance.remove(); formMapInstance = null; formMarker = null; }
-  formMapLat = null;
-  formMapLng = null;
+  formMapLat = null; formMapLng = null;
 }
 
 // ==================== DETAIL MAP ====================
@@ -568,9 +606,7 @@ function destroyDetailMap() {
 function render() {
   const grid = document.getElementById('cardsGrid');
   const empty = document.getElementById('emptyState');
-  const stats = document.getElementById('statsCount');
-
-  stats.textContent = pets.filter(p => p.status === 'lost').length;
+  document.getElementById('statsCount').textContent = pets.filter(p => p.status === 'lost').length;
 
   let filtered = pets;
   if (currentFilter === 'lost') filtered = pets.filter(p => p.status === 'lost');
@@ -592,25 +628,19 @@ function render() {
 
   filtered = [...filtered].sort((a, b) => {
     if (a.status !== b.status) return a.status === 'lost' ? -1 : 1;
-    return b.createdAt - a.createdAt;
+    return (b.createdAt || 0) - (a.createdAt || 0);
   });
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
     empty.style.display = 'block';
-    if (searchQuery) {
-      document.getElementById('emptyTitle').textContent = `找不到「${searchQuery}」相關的協尋`;
-      document.getElementById('emptyDesc').textContent = '試試其他關鍵字，或清除搜尋條件';
-    } else {
-      document.getElementById('emptyTitle').textContent = '目前沒有協尋啟事';
-      document.getElementById('emptyDesc').textContent = '按下「刊登協尋啟事」來新增第一筆吧！';
-    }
+    document.getElementById('emptyTitle').textContent = searchQuery ? `找不到「${searchQuery}」相關的協尋` : '目前沒有協尋啟事';
+    document.getElementById('emptyDesc').textContent = searchQuery ? '試試其他關鍵字，或清除搜尋條件' : '按下「刊登協尋啟事」來新增第一筆吧！';
     return;
   }
   empty.style.display = 'none';
 
   const speciesEmoji = { dog: '🐕', cat: '🐈', bird: '🐦', rabbit: '🐰', other: '🐾' };
-
   grid.innerHTML = filtered.map(pet => `
     <div class="pet-card ${pet.status === 'found' ? 'found' : ''}" onclick="openDetail('${pet.id}')">
       <span class="card-badge ${pet.status === 'found' ? 'badge-found' : 'badge-lost'}">
@@ -618,7 +648,7 @@ function render() {
       </span>
       <div class="card-img">
         ${pet.photos && pet.photos[0]
-          ? `<img src="${pet.photos[0]}" alt="${pet.petName}">`
+          ? `<img src="${pet.photos[0]}" alt="${pet.petName}" loading="lazy">`
           : `<span>${speciesEmoji[pet.species] || '🐾'}</span>`}
       </div>
       <div class="card-body">
@@ -677,6 +707,8 @@ function closeFormModal() {
   destroyFormMap();
   uploadedPhotos = [];
   clearForm();
+  const btn = document.querySelector('.btn-submit');
+  btn.disabled = false;
 }
 
 function clearForm() {
@@ -745,8 +777,8 @@ function removePhoto(index) {
   renderPhotoPreviews();
 }
 
-// ==================== SUBMIT ====================
-function submitForm() {
+// ==================== SUBMIT (async) ====================
+async function submitForm() {
   const petName = document.getElementById('f_petName').value.trim();
   const species = document.getElementById('f_species').value;
   const lostDate = document.getElementById('f_lostDate').value;
@@ -759,37 +791,65 @@ function submitForm() {
   if (!lostLocation) { showToast('請填寫走失地點 📍'); document.getElementById('f_lostLocation').focus(); return; }
   if (!ownerName) { showToast('請填寫聯絡人稱呼 📞'); document.getElementById('f_ownerName').focus(); return; }
 
-  const data = {
-    petName, species,
-    gender: document.getElementById('f_gender').value,
-    breed: document.getElementById('f_breed').value.trim(),
-    color: document.getElementById('f_color').value.trim(),
-    characteristics: document.getElementById('f_characteristics').value.trim(),
-    lostDate, lostTime: document.getElementById('f_lostTime').value.trim(), lostLocation,
-    ownerName,
-    phone: document.getElementById('f_phone').value.trim(),
-    lineId: document.getElementById('f_lineId').value.trim(),
-    reward: document.getElementById('f_reward').value.trim(),
-    photos: [...uploadedPhotos],
-    lat: formMapLat,
-    lng: formMapLng,
-  };
+  const btn = document.querySelector('.btn-submit');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '處理中…';
 
-  if (editingId) {
-    const idx = pets.findIndex(p => p.id === editingId);
-    if (idx !== -1) pets[idx] = { ...pets[idx], ...data };
-    showToast('✅ 已更新協尋啟事');
-  } else {
-    data.id = Date.now().toString();
-    data.createdAt = Date.now();
-    data.status = 'lost';
-    pets.unshift(data);
-    showToast('🐾 協尋啟事已刊登！');
+  try {
+    const petDocRef = editingId
+      ? db.collection('pets').doc(editingId)
+      : db.collection('pets').doc();
+    const petId = petDocRef.id;
+
+    const photoUrls = [];
+    const newCount = uploadedPhotos.filter(p => !p.startsWith('https://')).length;
+    let done = 0;
+    for (let i = 0; i < uploadedPhotos.length; i++) {
+      const photo = uploadedPhotos[i];
+      if (photo.startsWith('https://')) {
+        photoUrls.push(photo);
+      } else {
+        done++;
+        btn.textContent = newCount > 1 ? `上傳照片 ${done}/${newCount}…` : '上傳照片…';
+        photoUrls.push(await uploadPhotoToStorage(photo, petId, i));
+      }
+    }
+
+    const data = {
+      petName, species,
+      gender: document.getElementById('f_gender').value,
+      breed: document.getElementById('f_breed').value.trim(),
+      color: document.getElementById('f_color').value.trim(),
+      characteristics: document.getElementById('f_characteristics').value.trim(),
+      lostDate,
+      lostTime: document.getElementById('f_lostTime').value.trim(),
+      lostLocation, ownerName,
+      phone: document.getElementById('f_phone').value.trim(),
+      lineId: document.getElementById('f_lineId').value.trim(),
+      reward: document.getElementById('f_reward').value.trim(),
+      photos: photoUrls,
+      lat: formMapLat,
+      lng: formMapLng,
+    };
+
+    btn.textContent = '儲存中…';
+    if (editingId) {
+      await petDocRef.update(data);
+      showToast('✅ 已更新協尋啟事');
+    } else {
+      data.createdAt = Date.now();
+      data.status = 'lost';
+      await petDocRef.set(data);
+      showToast('🐾 協尋啟事已刊登！');
+    }
+    closeFormModal();
+  } catch (err) {
+    console.error('submitForm error:', err);
+    showToast('❌ 儲存失敗，請再試一次');
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
-
-  save();
-  closeFormModal();
-  render();
 }
 
 // ==================== DETAIL MODAL ====================
@@ -867,20 +927,36 @@ function closeDetailModal() {
   destroyDetailMap();
 }
 
-function markFound(id) {
-  const pet = pets.find(p => p.id === id);
-  if (pet) { pet.status = 'found'; save(); render(); closeDetailModal(); showToast('🎉 太好了！毛孩已找到！'); }
+async function markFound(id) {
+  try {
+    await db.collection('pets').doc(id).update({ status: 'found' });
+    closeDetailModal();
+    showToast('🎉 太好了！毛孩已找到！');
+  } catch (err) {
+    console.error(err);
+    showToast('❌ 更新失敗，請再試一次');
+  }
 }
 
-function deletePet(id) {
+async function deletePet(id) {
   if (!confirm('確定要刪除這則協尋啟事嗎？')) return;
-  pets = pets.filter(p => p.id !== id);
-  save(); render(); closeDetailModal(); showToast('已刪除');
+  try {
+    const pet = pets.find(p => p.id === id);
+    if (pet && pet.photos) {
+      for (const url of pet.photos) {
+        try { await storage.refFromURL(url).delete(); } catch (e) { /* ignore */ }
+      }
+    }
+    await db.collection('pets').doc(id).delete();
+    closeDetailModal();
+    showToast('已刪除');
+  } catch (err) {
+    console.error(err);
+    showToast('❌ 刪除失敗，請再試一次');
+  }
 }
 
 // ==================== UTILS ====================
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(pets)); }
-
 function speciesLabel(s) {
   return ({ dog:'狗', cat:'貓', bird:'鳥', rabbit:'兔', other:'其他' })[s] || s || '不明';
 }
@@ -892,6 +968,7 @@ function formatDate(d) {
 }
 
 function timeAgo(ts) {
+  if (!ts) return '';
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
@@ -919,8 +996,6 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
     }
   });
 });
-
-render();
 </script>
 </body>
 </html>
