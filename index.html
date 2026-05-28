@@ -52,7 +52,7 @@
   }
   .search-bar input {
     width: 100%;
-    padding: 14px 20px 14px 62px;
+    padding: 14px 20px 14px 20px;
     border: 2px solid #E5E7EB;
     border-radius: 999px;
     font-size: 15px;
@@ -65,7 +65,6 @@
   }
   .search-bar input:focus { border-color: var(--orange); box-shadow: 0 0 0 4px rgba(255,107,53,0.1); }
   .search-bar input::placeholder { color: #9CA3AF; }
-  .search-icon { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); font-size: 18px; pointer-events: none; }
   .search-clear {
     position: absolute;
     right: 16px;
@@ -277,7 +276,6 @@
 
   <!-- SEARCH BAR -->
   <div class="search-bar">
-    <span class="search-icon">🔍</span>
     <input type="text" id="searchInput" placeholder="搜尋寵物名字、品種、走失地點…" oninput="onSearch(this.value)">
     <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
   </div>
